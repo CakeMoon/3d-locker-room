@@ -62,9 +62,10 @@ export default {
       45,
       this.sceneCanvas.getBoundingClientRect().width / this.sceneCanvas.getBoundingClientRect().height,
       1,
-      10000
+      5000
     )
-    this.camera.position.set( 5000, 20000, 10000 );
+    this.camera.position.set( 0, 200, 400 );
+    this.camera.lookAt( 0, 0, 0 );
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color( 0xcccccc );
@@ -87,11 +88,10 @@ export default {
     this.scene.add( this.group );
     
     // ground
-    const mesh = new THREE.Mesh( new THREE.PlaneBufferGeometry( 16000, 16000 ), new THREE.MeshPhongMaterial( { color: 0x91ABF1, depthWrite: false } ) );
+    const mesh = new THREE.Mesh( new THREE.PlaneBufferGeometry( 10, 10 ), new THREE.MeshPhongMaterial( { color: 0x91ABF1, depthWrite: false } ) );
     mesh.rotation.x = - Math.PI / 2;
     mesh.receiveShadow = true;
     
-
     var gridHelper = new THREE.GridHelper( 1000, 20 );
     this.scene.add( gridHelper );
 
@@ -279,6 +279,7 @@ export default {
           this.dragControls = new DragControls( this.objects, this.camera, this.renderer.domElement );
           this.dragControls.addEventListener( 'dragstart', function () { that.orbitControls.enabled = false; } );
           this.dragControls.addEventListener( 'dragend', function () { that.orbitControls.enabled = true; } );
+          this.animate();
         })
         .catch(error => console.log(error));
     },

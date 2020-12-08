@@ -106,7 +106,7 @@ export default {
             .then((res) => {
               // handle success
               this.$cookie.set('locker-room-auth', res.data.data.name);
-              this.message = "Signed up successfully, loggin you in!";
+              this.message = "Signed up successfully, logging you in!";
               this.showMessage = true;
               this.clearMessages();
               setTimeout(() => {
