@@ -14,7 +14,7 @@
 <script>
 import * as THREE from 'three'
 import { DragControls } from 'three/examples/jsm/controls/DragControls.js';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+// import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import axios from "axios";
 import { eventBus } from "../main";
@@ -29,14 +29,22 @@ export default {
       camera: null,
       renderer: null,
       dragControls: null,
-      orbitControls: null,
+      //orbitControls: null,
       objects: [],
       images: [],
       model3Ds: [],
       mouse: null,
       group: null,
-      enableSelection: false,
       raycaster: null,
+
+
+      cube: null,
+      draging: false,
+      drawing: false,
+      pointBase: null,
+      plane: null,
+      isShiftDown: false,
+      drawingMesh: null,
     }
   },
 
@@ -50,25 +58,33 @@ export default {
     eventBus.$on("upload-image-success", () => {
       this.listAllObjects();
     });
-  },
+  }, 
 
   mounted () {
     this.mouse = new THREE.Vector2();
     this.raycaster = new THREE.Raycaster();
+    this.pointBase = new THREE.Vector3(); // create once and reuse
 
     this.sceneCanvas = document.getElementById('three-scene-canvas');
 
-    this.camera = new THREE.PerspectiveCamera(
-      45,
-      this.sceneCanvas.getBoundingClientRect().width / this.sceneCanvas.getBoundingClientRect().height,
-      1,
-      10000
-    )
-    this.camera.position.set( 5000, 20000, 10000 );
+    // this.camera = new THREE.PerspectiveCamera(
+    //   45,
+    //   this.sceneCanvas.getBoundingClientRect().width / this.sceneCanvas.getBoundingClientRect().height,
+    //   1,
+    //   10000
+    // )
+    // this.camera.position.set( 5000, 20000, 10000 );
+    
+    const aspect = this.sceneCanvas.getBoundingClientRect().width / this.sceneCanvas.getBoundingClientRect().height;
+    const d = 500;
+    this.camera = new THREE.OrthographicCamera( - d * aspect, d * aspect, d, - d, 1, 10000 );
+
+    this.camera.position.set( d, d, d ); // all components equal
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color( 0xcccccc );
     this.scene.add( new THREE.AmbientLight( 0x505050 ) );
+    this.camera.lookAt( this.scene.position ); // or the origin
 
     // light
     const light = new THREE.SpotLight( 0xffffff, 1 );
@@ -87,11 +103,13 @@ export default {
     this.scene.add( this.group );
     
     // ground
-    const mesh = new THREE.Mesh( new THREE.PlaneBufferGeometry( 16000, 16000 ), new THREE.MeshPhongMaterial( { color: 0x91ABF1, depthWrite: false } ) );
-    mesh.rotation.x = - Math.PI / 2;
-    mesh.receiveShadow = true;
-    
+    const geometry = new THREE.PlaneBufferGeometry( 10000, 10000 );
+    geometry.rotateX( - Math.PI / 2 );
+    this.plane = new THREE.Mesh( geometry, new THREE.MeshBasicMaterial( { visible: false } ) );
+    this.scene.add( this.plane );
+    this.objects.push( this.plane );
 
+    // grid
     var gridHelper = new THREE.GridHelper( 1000, 20 );
     this.scene.add( gridHelper );
 
@@ -102,26 +120,31 @@ export default {
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFShadowMap;
     this.sceneCanvas.append(this.renderer.domElement)
+
+    const axesHelper = new THREE.AxesHelper( 5 );
+    this.scene.add( axesHelper );
     
     //
+    const cubeGeo = new THREE.BoxBufferGeometry( 50, 50, 50 );
+		const cubeMaterial = new THREE.MeshLambertMaterial( { color: 0xfeb74c, map: new THREE.TextureLoader().load( 'textures/square-outline-textured.png' ) } );
+    this.cube = new THREE.Mesh( cubeGeo, cubeMaterial );
+    this.scene.add(this.cube);
 
     window.addEventListener( 'resize', this.onWindowResize, false );
 
     this.sceneCanvas.addEventListener( 'click', this.onClick, false );
-    this.sceneCanvas.addEventListener( 'keydown', this.onKeyDown, false );
-    this.sceneCanvas.addEventListener( 'keyup', this.onKeyUp, false );
+    window.addEventListener( 'keydown', this.onKeyDown, false );
+    window.addEventListener( 'keyup', this.onKeyUp, false );
+    // keydown/keyup seem only work for window
+    this.sceneCanvas.addEventListener( 'mousemove', this.onMouseMove, false );
 
-    this.orbitControls = new OrbitControls( this.camera, this.renderer.domElement );
-
-    this.orbitControls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
-    this.orbitControls.dampingFactor = 0.05;
-
-    this.orbitControls.screenSpacePanning = false;
-
-    this.orbitControls.minDistance = 100;
-    this.orbitControls.maxDistance = 1500;
-
-    this.orbitControls.maxPolarAngle = Math.PI / 2;
+    // this.orbitControls = new OrbitControls( this.camera, this.renderer.domElement );
+    // this.orbitControls.enableDamping = true; // an animation loop is required when either damping or auto-rotation are enabled
+    // this.orbitControls.dampingFactor = 0.05;
+    // this.orbitControls.screenSpacePanning = false;
+    // this.orbitControls.minDistance = 100;
+    // this.orbitControls.maxDistance = 1500;
+    // this.orbitControls.maxPolarAngle = Math.PI / 2;
 
     this.render();
   },
@@ -136,72 +159,108 @@ export default {
     },
 
     onKeyDown: function( event ) {
-      this.enableSelection = ( event.keyCode === 16 ) ? true : false;
+      console.log("key down!");
+      this.isShiftDown = ( event.keyCode === 16 ) ? true : false;
     },
       
     onKeyUp: function() {
-      this.enableSelection = false;
+      console.log("key up");
+      this.isShiftDown = ( event.keyCode === 16 ) ? false : true;
     },
 
-    draw: function() {
-      this.drawing = !this.drawing;
-    },
-      
     onClick: function( event ) {
-
       event.preventDefault();
-
-      if ( this.enableSelection === true ) {
-
-        const draggableObjects = this.dragControls.getObjects();
-        draggableObjects.length = 0;
-
-        this.mouse.x = ( event.clientX / window.innerWidth ) * 2 - 1;
-        this.mouse.y = - ( event.clientY / window.innerHeight ) * 2 + 1;
-
+      if (this.draging) {
+        this.draging = false;
+      } 
+      else {
+        console.log("darwing");
+        this.mouse.set(
+          ( event.clientX / this.sceneCanvas.getBoundingClientRect().width ) * 2 - 1,
+          - ( event.clientY / this.sceneCanvas.getBoundingClientRect().height ) * 2 + 1
+          );
         this.raycaster.setFromCamera( this.mouse, this.camera );
-
-        const intersections = this.raycaster.intersectObjects( this.objects, true );
-
-        if ( intersections.length > 0 ) {
-
-          const object = intersections[ 0 ].object;
-
-          if ( this.group.children.includes( object ) === true ) {
-
-            object.material.emissive.set( 0x000000 );
-            this.scene.attach( object );
-
-          } else {
-
-            object.material.emissive.set( 0xaaaaaa );
-            this.group.attach( object );
-
-          }
-
-          this.dragControls.transformGroup = true;
-          draggableObjects.push( this.group );
-
+        const intersects = this.raycaster.intersectObjects( this.objects );
+        if ( intersects.length > 0 ) {
+            const intersect = intersects[ 0 ];
+            // delete cube
+            if ( this.isShiftDown ) {
+                if ( intersect.object !== this.plane ) {
+                    this.scene.remove( intersect.object );
+                    this.objects.splice( this.objects.indexOf( intersect.object ), 1 );
+                }
+            // create cube
+            } else {
+                if (!this.drawing) {
+                    // var vec = new THREE.Vector3(); // create once and reuse
+                    // vec.set(
+                    //     ( event.clientX / this.sceneCanvas.getBoundingClientRect().width ) * 2 - 1,
+                    //     - ( event.clientY / this.sceneCanvas.getBoundingClientRect().height ) * 2 + 1,
+                    //     0.5 );
+                    // vec.unproject( this.camera );
+                    // vec.sub( this.camera.position ).normalize();
+                    // var distance = - this.camera.position.z / vec.z;
+                    this.pointBase.copy( intersect.point ).add( intersect.face.normal );
+                    this.cube.position.copy( intersect.point ).add( intersect.face.normal );
+                    this.drawing = true;
+                }
+                else if (this.drawing) {
+                    const newMesh = this.drawingMesh.clone ();
+                    newMesh.name = this.count;
+                    this.count++;
+                    this.objects.push(newMesh);
+                    this.scene.add(newMesh);
+                    this.drawing = false;
+                }
+            }
+            this.render();
         }
-
-        if ( this.group.children.length === 0 ) {
-
-          this.dragControls.transformGroup = false;
-          draggableObjects.push( ...this.objects );
-
-        }
-
       }
+    },
 
-      this.animate();
+    onMouseMove: function( event ) {
+      console.log("move!");
 
+      var selectedObject = this.scene.getObjectByName("drawingMesh");
+      this.scene.remove( selectedObject );
+      
+      event.preventDefault();
+      if (this.drawing) {
+          var vec = new THREE.Vector3(); // create once and reuse
+          var pos = new THREE.Vector3(); // create once and reuse
+          vec.set(
+              ( event.clientX / event.clientX / this.sceneCanvas.getBoundingClientRect().width ) * 2 - 1,
+              - ( event.clientY / this.sceneCanvas.getBoundingClientRect().height ) * 2 + 1,
+              ( this.camera.near + this.camera.far ) / ( this.camera.near - this.camera.far ));
+          vec.unproject( this.camera );
+          vec.sub( this.camera.position ).normalize();
+          var distance = - this.camera.position.z / vec.z;
+          pos.copy( this.camera.position ).add( vec.multiplyScalar( distance ) );
+
+          // rollOverMesh.position.copy( intersect.point ).add( intersect.face.normal );
+          // rollOverMesh.position.divideScalar( 50 ).floor().multiplyScalar( 50 ).addScalar( 25 );
+
+          const width = Math.abs(pos.x);
+          const height = Math.abs(pos.y);
+          const depth = Math.abs(pos.z);
+          const drawingGeo = new THREE.BoxBufferGeometry( width, depth, height );
+          const drawingMaterial = new THREE.MeshBasicMaterial( { color: 0xff0000, opacity: 0.5, transparent: true } );
+          this.drawingMesh = new THREE.Mesh( drawingGeo, drawingMaterial );
+          this.drawingMesh.name = "drawingMesh"
+          this.drawingMesh.position.x = this.pointBase.x/2;
+          this.drawingMesh.position.y = this.pointBase.y //+ pos.y) / 2;
+          this.drawingMesh.position.z = this.pointBase.z/2;
+          this.scene.add( this.drawingMesh );
+
+      this.render();
+      }
     },
       
     animate: function() {
 
       requestAnimationFrame( this.animate );
 
-      this.orbitControls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
+      //this.orbitControls.update(); // only required if controls.enableDamping = true, or if controls.autoRotate = true
 
       this.render();
 
@@ -276,9 +335,12 @@ export default {
         })
         .then(() => {
           var that = this;
-          this.dragControls = new DragControls( this.objects, this.camera, this.renderer.domElement );
-          this.dragControls.addEventListener( 'dragstart', function () { that.orbitControls.enabled = false; } );
-          this.dragControls.addEventListener( 'dragend', function () { that.orbitControls.enabled = true; } );
+          this.dragControls = new DragControls( this.objects.slice(1), this.camera, this.renderer.domElement );
+          this.dragControls.addEventListener( 'dragstart', function () { that.draging = true } );
+          //that.orbitControls.enabled = false;
+          this.dragControls.addEventListener( 'dragend', function () { that.draging = true } );
+          this.animate();
+          console.log("loaded!");
         })
         .catch(error => console.log(error));
     },
