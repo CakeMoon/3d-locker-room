@@ -19,10 +19,10 @@ export default new Router({
             component: () => import('./views/ImagePage.vue'),
         },
         {   path: '/model3ds',
-        component: () => import('./views/ModelPage.vue'),
+            component: () => import('./views/ModelPage.vue'),
         },
         {   path: '/hints',
-        component: () => import('./views/Hints.vue'),
+            component: () => import('./views/Hints.vue'),
         },
     ]
 })
